@@ -1,0 +1,55 @@
+# R script for extracting the mean daily rainfall for the each district of Uganda
+# Author: Godwin Nutsugah
+# email: nutsugah@msu.edu
+
+#Clear working environment
+remove(list=ls())
+
+# Load necessary packages ( if this is your first time with this packages then you have to install them first)
+library(rgdal)
+library(raster)
+library(sf)
+library(dplyr)
+library(openxlsx)
+
+# Set working directory to the folder that contains my rainfall and shapefile
+setwd("/Users/.../Uganda")
+
+# Load the shapefile
+district_shp <- read_sf("uga_admbnda_ubos_20200824_shp/uga_admbnda_adm2_ubos_20200824.shp")
+
+# Define a function to extract average rainfall per district
+extract_average_rainfall <- function(rain_raster, shp) {
+  rain_raster <- projectRaster(rain_raster, crs = st_crs(shp)) # this line ensures both data have same CRS (very important)
+  daily_rain <- raster::extract(rain_raster, shp, fun = mean, na.rm = TRUE)
+  return(daily_rain)
+}
+
+# Get the list of .tif files
+tif_files <- list.files("chirps_daily_data", pattern = "*.tif", full.names = TRUE)
+
+# Initialize an empty dataframe to store the results
+result_df <- data.frame(Date = as.Date(character()), District = character(), Rainfall = numeric())
+
+# Loop through the .tif files and extract average rainfall per district
+for (file in tif_files) {
+  # Load the raster data
+  rain_brick <- brick(file)
+  
+  # Get the date from the file name
+  date <- as.Date(gsub("chirps_daily_data/chirps-v2.0.(.+)\\.tif", "\\1", file), format = "%Y.%m.%d")
+  
+  # Extract average rainfall per district
+  daily_rain <- extract_average_rainfall(rain_brick[[1]], district_shp)
+  
+  # Create a temporary dataframe to store the results for the current raster file
+  temp_df <- data.frame(Date = rep(date, length(daily_rain)),
+                        District = district_shp$ADM2_EN,
+                        Rainfall = daily_rain)
+  
+  # Append the temporary dataframe to the result dataframe
+  result_df <- rbind(result_df, temp_df)
+}
+
+# Write the final result to an .xlsx file and clean
+write.xlsx(result_df, "uganda_district_rainfall_data.xlsx")
